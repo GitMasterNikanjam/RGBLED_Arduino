@@ -1,5 +1,11 @@
+
+// #################################################################################
+// Include libraries:
+
 #include "RGBLED.h"
 
+// ##################################################################################
+// RGBLED Class:
 
 RGBLED::RGBLED()
 {
@@ -12,7 +18,7 @@ RGBLED::RGBLED()
 
 RGBLED::~RGBLED()
 {
-  set(0,0,0);
+  off();
 
   if(parameters.RED_PIN != -1)
   {
@@ -34,32 +40,37 @@ RGBLED::~RGBLED()
 bool RGBLED::init(void)
 {
 
-  if(CheckParameters() == false)
+  if(_checkParameters() == false)
   {
     return false;
   }
 
-  if(parameters.COMMON_STATE == 0)
+  if(parameters.COMMON_STATE == RGBLED_COMMON_CATHODE)
   {
     _onState = 1;
   }
-  else
+  else if(parameters.COMMON_STATE == RGBLED_COMMON_ANODE)
   {
     _onState = 0;
+  }
+  else 
+  {
+    errorMessage = "Error RGBLED: Common mode value is not correct.";
+    return false;;
   }
 
   pinMode(parameters.RED_PIN, OUTPUT);
   pinMode(parameters.GREEN_PIN, OUTPUT);
   pinMode(parameters.BLUE_PIN, OUTPUT);
 
-  set(0,0,0);
+  off();
 
   return true;
 }
 
 void RGBLED::set(bool redState, bool greenState, bool blueState)
 {
-  if(_onState == RGB_COMMON_CATHODE)
+  if(_onState == RGBLED_COMMON_CATHODE)
   {
     digitalWrite(parameters.RED_PIN, redState);
     digitalWrite(parameters.GREEN_PIN, greenState);
@@ -73,42 +84,48 @@ void RGBLED::set(bool redState, bool greenState, bool blueState)
   }
 }
 
-void RGBLED::red(bool state)
+
+void RGBLED::off(void)
 {
-  set(state,0,0);
+  set(0,0,0);
 }
 
-void RGBLED::green(bool state)
+void RGBLED::red(void)
 {
-  set(0,state,0);
+  set(1,0,0);
 }
 
-void RGBLED::blue(bool state)
+void RGBLED::green(void)
 {
-  set(0,0,state);
+  set(0,1,0);
 }
 
-void RGBLED::yellow(bool state)
+void RGBLED::blue(void)
 {
-  set(state,state,0);
+  set(0,0,1);
 }
 
-void RGBLED::purple(bool state)
+void RGBLED::yellow(void)
 {
-  set(state,0,state);
+  set(1,1,0);
 }
 
-void RGBLED::cyan(bool state)
+void RGBLED::purple(void)
 {
-  set(0,state,state);
+  set(1,0,1);
 }
 
-void RGBLED::white(bool state)
+void RGBLED::cyan(void)
 {
-  set(state,state,state);
+  set(0,1,1);
 }
 
-bool RGBLED::CheckParameters(void)
+void RGBLED::white(void)
+{
+  set(1,1,1);
+}
+
+bool RGBLED::_checkParameters(void)
 {
   bool state = ( (parameters.COMMON_STATE <= 1) && (parameters.BLUE_PIN >= 0) &&
                (parameters.GREEN_PIN >= 0) && (parameters.RED_PIN >= 0) ); 
