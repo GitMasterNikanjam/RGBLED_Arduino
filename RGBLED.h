@@ -204,6 +204,8 @@ class RGBLED
      */
     void getColor(bool &r, bool &g, bool &b) const;
 
+    bool getInitFlag(void) { return _initFlag;};
+    
     // --------------------------------------------------------------------------
     // PWM / 8-bit color (optional)
     // --------------------------------------------------------------------------
@@ -236,14 +238,17 @@ class RGBLED
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Blink the LED a given number of times within a total duration.
+     * @brief Blink the LED.
      *
-     * @param duration     Total time of blinking sequence [ms].
-     * @param number       Number of ON/OFF cycles.
-     * @param blockingMode If true, blocks until blinking finishes.
-     *                     If false, enables non-blocking blink (use @ref blinkUpdate).
+     * @param duration      If @p number > 0: total sequence time in milliseconds.
+     *                      If @p number == 0 (infinite mode): half-period in milliseconds
+     *                      (i.e., time for each ON or OFF interval).
+     * @param number        Number of ON/OFF cycles. Use 0 for infinite blinking.
+     * @param blockingMode  If true and @p number > 0: block until finished.
+     *                      Ignored when @p number == 0 (always non-blocking).
      *
-     * @note In non-blocking mode, call @ref blinkUpdate periodically (e.g. in @c loop()).
+     * @note In non-blocking mode, call @ref blinkUpdate() regularly in @c loop().
+     * @note Use @ref stopBlink() to end infinite blinking.
      */
     void blink(uint16_t duration, uint8_t number, bool blockingMode = true);
 

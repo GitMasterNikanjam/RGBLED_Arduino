@@ -183,33 +183,49 @@ void RGBLED::blink(uint16_t duration_ms, uint8_t number, bool blocking)
 {
     if (!_initFlag) return;
 
-    if (duration_ms == 0 || number == 0) {
+    // duration_ms must be > 0 in all modes
+    if (duration_ms == 0) 
+    {
         _blinkActive = false;
         off();
         return;
     }
 
-    // half-period per edge (on or off)
-    // duration_ms covers "number" ON and "number" OFF => 2*number edges
-    const uint32_t edges = 2UL * number;
-    _blinkDelayMs  = (uint32_t)(duration_ms / edges);
-    _blinkRemainder = (uint16_t)(duration_ms % edges); // (3) distribute +1 ms over first _blinkRemainder edges
+    // -------- Infinite mode: number == 0 --------
+    if (number == 0) 
+    {
+        // Interpret duration_ms as HALF-PERIOD
+        _blinkNumber    = 0;            // sentinel: infinite
+        _blinkEdgeCnt   = 0;
+        _blinkActive    = true;
+        _blinkDelayMs   = duration_ms;  // fixed half-period
+        _blinkRemainder = 0;            // not used in infinite mode
+        _currentDelay   = _blinkDelayMs;
+        _tRef           = millis();
+
+        // Start from ON (show cached color)
+        on();
+        return;
+    }
+
+    // -------- Finite mode (existing behavior) --------
+    const uint32_t edges = 2UL * number;              // ON + OFF edges
+    _blinkDelayMs   = (uint32_t)(duration_ms / edges);
+    _blinkRemainder = (uint16_t)(duration_ms % edges); // spread +1ms over first remainder edges
     if (_blinkDelayMs == 0 && edges) { _blinkDelayMs = 1; } // avoid zero delay
     _currentDelay = _blinkDelayMs + (_blinkRemainder ? 1 : 0);
 
     if (blocking) 
     {
-      // Save current desired color; we blink this color.
-      const bool r = _redDesired, g = _greenDesired, b = _blueDesired;
+        const bool r = _redDesired, g = _greenDesired, b = _blueDesired;
 
-      uint16_t rem = _blinkRemainder;
-      for (uint8_t i = 0; i < number; ++i) 
-      {
-        set(r, g, b);
-        delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
-        off();
-        delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
-      }
+        uint16_t rem = _blinkRemainder;
+        for (uint8_t i = 0; i < number; ++i) {
+            set(r, g, b);
+            delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
+            off();
+            delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
+        }
     } 
     else 
     {
@@ -217,30 +233,29 @@ void RGBLED::blink(uint16_t duration_ms, uint8_t number, bool blocking)
         _blinkEdgeCnt = 0;
         _blinkActive  = true;
         _tRef         = millis();
-
-        // Start from ON (show cached color)
         on();
     }
 }
 
 void RGBLED::blinkUpdate() 
 {
-    if (!_blinkActive || !_initFlag) return; // Guard (1)
+  if (!_blinkActive || !_initFlag) return; // Guard (1)
 
-    const uint32_t now = millis();
-    if ((uint32_t)(now - _tRef) < _currentDelay) return;
+  const uint32_t now = millis();
+  if ((uint32_t)(now - _tRef) < _currentDelay) return;
 
-    // time for next edge
-    toggle();
-    _tRef = now;
-    _blinkEdgeCnt++;
-    if (_blinkRemainder) { _blinkRemainder--; }
-   _currentDelay = _blinkDelayMs + (_blinkRemainder ? 1 : 0);
+  // time for next edge
+  toggle();
+  _tRef = now;
+  _blinkEdgeCnt++;
+  if (_blinkRemainder) { _blinkRemainder--; }
+  _currentDelay = _blinkDelayMs + (_blinkRemainder ? 1 : 0);
 
-    if (_blinkEdgeCnt >= (uint8_t)(2 * _blinkNumber)) {
-        _blinkActive = false;
-        off();
-    }
+  // Stop only in FINITE mode (when _blinkNumber > 0)
+  if (_blinkNumber > 0 && _blinkEdgeCnt >= (uint8_t)(2 * _blinkNumber)) {
+      _blinkActive = false;
+      off();
+  }
 }
 
 void RGBLED::red()    { set(true,  false, false); }

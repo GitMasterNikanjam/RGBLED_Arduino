@@ -1,38 +1,39 @@
 # RGBLED — Arduino RGB LED Library
 
-A lightweight Arduino library to drive **common-cathode** or **common-anode** RGB LEDs with:
+A lightweight Arduino library to drive **common-cathode** or **common-anode** RGB LEDs.
 
-* Simple color helpers (`red()`, `green()`, `blue()`, `white()`, …) 
-* Deterministic **blocking** and **non-blocking** blinking with exact total duration (remainder distribution) 
-* Optional **PWM** path with 8-bit color (`setRGB`) and global **brightness** control 
-* **Glitch-free init** (preloads OFF level before switching pins to OUTPUT) 
-* Deterministic, RAM-safe **error codes** (no `String` allocations) 
+- Simple color helpers: `red()`, `green()`, `blue()`, `white()`, …
+- Deterministic **blocking** and **non-blocking** blinking with exact total duration (remainder distribution)
+- Optional **PWM** path with 8-bit color (`setRGB`) and global **brightness**
+- **Glitch-free init**: preloads OFF before switching pins to OUTPUT (prevents power-up flash)
+- Small, deterministic **error codes** (no dynamic `String`)
 
 ---
 
 ## Table of Contents
 
-* [Supported Hardware](#supported-hardware)
-* [Installation](#installation)
-* [Wiring](#wiring)
-* [Quick Start](#quick-start)
-* [API Overview](#api-overview)
-* [Blinking: Blocking vs Non-Blocking](#blinking-blocking-vs-non-blocking)
-* [PWM Mode & Brightness](#pwm-mode--brightness)
-* [Error Handling](#error-handling)
-* [Examples](#examples)
-* [Doxygen Docs](#doxygen-docs)
-* [Migration Notes](#migration-notes)
-* [License](#license)
+- [Supported Hardware](#supported-hardware)
+- [Installation](#installation)
+- [Wiring](#wiring)
+- [Quick Start](#quick-start)
+- [API Overview](#api-overview)
+- [Blinking Modes](#blinking-modes)
+- [PWM Mode & Brightness](#pwm-mode--brightness)
+- [Error Handling](#error-handling)
+- [Examples](#examples)
+- [Doxygen Docs](#doxygen-docs)
+- [Migration Notes](#migration-notes)
+- [Changelog](#changelog)
+- [License](#license)
 
 ---
 
 ## Supported Hardware
 
-* Any Arduino-compatible board with 3 GPIOs driving an RGB LED (direct or via transistor/driver).
-* **Common-Cathode** (CC) or **Common-Anode** (CA) wiring is supported via `parameters.COMMON_STATE`. The library maps logic levels internally using `_onLevel` so your code stays the same for both modes. 
+- Any Arduino-compatible board with 3 GPIOs driving an RGB LED (direct, or via transistors/drivers).
+- **Common-Cathode (CC)** and **Common-Anode (CA)** are both supported via `parameters.COMMON_STATE`. The library maps logic levels internally so your user code is the same for both modes. :contentReference[oaicite:0]{index=0}
 
-> **Note:** For PWM color/brightness, use PWM-capable pins on your board.
+> **PWM note:** When using PWM color/brightness, choose pins that support your board’s PWM backend. :contentReference[oaicite:1]{index=1}
 
 ---
 
@@ -40,8 +41,9 @@ A lightweight Arduino library to drive **common-cathode** or **common-anode** RG
 
 ### Arduino IDE
 
-1. Copy `RGBLED.h` and `RGBLED.cpp` into a folder named `RGBLED` inside your `Documents/Arduino/libraries/` directory.
-2. Restart the IDE.
+1. Create `Documents/Arduino/libraries/RGBLED/`
+2. Put `RGBLED.h` and `RGBLED.cpp` in that folder
+3. Restart the IDE
 
 ### Arduino CLI (Linux-first)
 
@@ -49,23 +51,21 @@ A lightweight Arduino library to drive **common-cathode** or **common-anode** RG
 arduino-cli lib install .
 arduino-cli compile --fqbn arduino:avr:uno examples/CompleteDemo
 arduino-cli upload  --fqbn arduino:avr:uno -p /dev/ttyACM0 examples/CompleteDemo
-```
+````
 
 ---
 
 ## Wiring
 
-* **Common Cathode (CC):** connect LED common pin to **GND**. Writing **HIGH** lights a color.
-* **Common Anode (CA):** connect LED common pin to **VCC**. Writing **LOW** lights a color.
-  Set:
+* **Common Cathode (CC):** common pin → **GND**. Writing **HIGH** lights a color.
+* **Common Anode (CA):** common pin → **VCC**. Writing **LOW** lights a color.
+* Configure once:
 
 ```cpp
 led.parameters.COMMON_STATE = RGBLED_COMMON_CATHODE; // or RGBLED_COMMON_ANODE
 ```
 
-The library computes `_onLevel` and handles inversion internally. 
-
-The library also **preloads OFF** to the output latches *before* `pinMode(…, OUTPUT)` to avoid a power-up flash. 
+The library **preloads OFF** to output latches *before* `pinMode(..., OUTPUT)` to avoid a boot flash. 
 
 ---
 
@@ -86,22 +86,17 @@ void setup() {
   if (!led.init()) {
     Serial.begin(115200);
     Serial.print(F("Init failed: "));
-    Serial.println(RGBLED::errorText(led.lastError)); // no String allocation
+    Serial.println(RGBLED::errorText(led.lastError));
     while (true) {}
   }
 
-  led.red();
-  delay(500);
-  led.cyan();
-  delay(500);
-
-  // Non-blocking blink: total 1200 ms, 4 cycles; progress via loop()
-  led.purple();
-  led.blink(1200, 4, false);
+  // Infinite blue blink: 1000 ms ON, 1000 ms OFF (non-blocking)
+  led.blue();               // cache desired color
+  led.blink(1000, 0, false); // number == 0 -> infinite; duration = half-period
 }
 
 void loop() {
-  led.blinkUpdate(); // progresses non-blocking blink
+  led.blinkUpdate();        // required for non-blocking mode
 }
 ```
 
@@ -109,7 +104,7 @@ void loop() {
 
 ## API Overview
 
-### Configuration & Init
+### Configure & Init
 
 ```cpp
 RGBLED led;
@@ -117,10 +112,10 @@ led.parameters.RED_PIN   = <pin>;
 led.parameters.GREEN_PIN = <pin>;
 led.parameters.BLUE_PIN  = <pin>;
 led.parameters.COMMON_STATE = RGBLED_COMMON_CATHODE; // or RGBLED_COMMON_ANODE
-bool ok = led.init(); // glitch-free, sets outputs OFF and guards subsequent calls
+bool ok = led.init(); // glitch-free, sets outputs OFF, guards subsequent calls
 ```
 
-Glitch-free init and `_initFlag` guard are implemented in `init()`. 
+Glitch-free init and guard behavior are in `init()`. 
 
 ### Basic Control (boolean colors)
 
@@ -132,67 +127,60 @@ bool on = led.isOn();
 bool r,g,b; led.getColor(r,g,b);
 ```
 
-APIs and behavior are defined in the header. 
-
-### Blinking
-
-```cpp
-led.blink(total_ms, cycles, /*blocking=*/true_or_false);
-while (led.isBlinking()) led.blinkUpdate(); // only needed for non-blocking
-led.stopBlink(/*turnOff=*/true);
-```
-
-Non-blocking engine uses `_blinkDelayMs`, `_blinkRemainder`, `_currentDelay`, and `millis()` unsigned arithmetic.  
-
-### PWM & 8-bit Color (optional)
-
-```cpp
-led.enablePWM(true);        // turn on PWM path
-led.setBrightness(200);     // global 0..255
-led.setRGB(255, 128, 0);    // 8-bit color (maps to digital ON/OFF when PWM disabled)
-```
-
-PWM functions and macros are defined in the header and implemented in `_applyOutputs()`.  
+Implemented via `_applyOutputs()`; digital mode uses HIGH/LOW, PWM mode uses 8-bit duty. 
 
 ---
 
-## Blinking: Blocking vs Non-Blocking
+## Blinking Modes
 
-**Total duration** is the exact time for the entire on↔off sequence:
+### 1) Finite Blink
 
-* Number of edges = `2 * cycles`.
-* Base half-period = `duration / edges`.
-* **Remainder** (`duration % edges`) is distributed by adding +1 ms to the **first N edges**, ensuring total time equals `duration`. This applies to both blocking and non-blocking modes. 
+```cpp
+// Blink for a total 'duration' with a given number of on/off cycles.
+led.blink(/*duration_ms=*/1200, /*number=*/4, /*blocking=*/false);
+```
 
-Non-blocking mode toggles in `blinkUpdate()` using `millis()`; it’s safe across overflow due to unsigned subtraction. 
+* Total **edges** = `2 * number` (ON + OFF)
+* Base half-period = `duration / edges`
+* **Remainder** (`duration % edges`) is distributed by adding +1 ms to the first remainder edges, ensuring the total elapsed time equals `duration` (applies to blocking and non-blocking). 
+
+In **non-blocking** mode, call `blinkUpdate()` regularly (e.g., in `loop()`).
+
+### 2) **Infinite Blink (new)**
+
+```cpp
+// number == 0 -> infinite; duration == half-period.
+led.blink(/*halfPeriod_ms=*/1000, /*number=*/0, /*blocking=*/false);
+```
+
+* `number == 0` enables **infinite** non-blocking blinking
+* `duration` is interpreted as a **half-period** (time spent ON or OFF)
+* Use `blinkUpdate()` in your `loop()` to progress the state machine
+* Call `stopBlink(true)` to end infinite blinking and turn the LED OFF
+
+> فارسی: در حالت بی‌نهایت، پارامتر `duration` یعنی **نیم‌تناوب**. برای توقف از `stopBlink()` استفاده کنید. این حالت همیشه **نان‌بلوکینگ** است.
 
 ---
 
 ## PWM Mode & Brightness
 
-* Enable with `enablePWM(true)`.
-* Set 8-bit per-channel color with `setRGB(r,g,b)` and global brightness with `setBrightness(b)`.
-* If PWM is **disabled**, any non-zero 8-bit value maps to ON for that channel. Behavior is unified via `_applyOutputs()`. 
-
-### Selecting the PWM backend
-
-By default, the library uses `analogWrite`. You can override via a macro:
+Enable PWM if you need 8-bit color or global brightness:
 
 ```cpp
-#define RGBLED_ANALOG_WRITE(pin, val) analogWrite((pin), (val)) // default
-// Example (ESP32 + LEDC):
-// #define RGBLED_ANALOG_WRITE(pin, val) ledcWrite(myChannelFor(pin), (val))
-#include "RGBLED.h"
+led.enablePWM(true);        // enable PWM path
+led.setBrightness(200);     // 0..255 global scale
+led.setRGB(255, 128, 0);    // 8-bit per channel; digital ON/OFF when PWM disabled
 ```
 
-The macro and usage notes are documented in the header. 
+* In PWM mode, CA wiring inverts duty internally; CC writes the duty as-is. 
+* Default backend is `analogWrite`; override by defining `RGBLED_ANALOG_WRITE(pin, val)` **before** including `RGBLED.h` (e.g., map to ESP32 LEDC). 
 
 ---
 
 ## Error Handling
 
-* `lastError` holds the last error code; values are from `RGBLED_Error` (`RGBLED_OK`, `RGBLED_ERR_PARAMS`).
-* `errorText(err)` returns a PROGMEM string suitable for printing (Flash-safe on AVR). 
+* `lastError` uses `RGBLED_Error` (`RGBLED_OK`, `RGBLED_ERR_PARAMS`)
+* `RGBLED::errorText(err)` returns a PROGMEM message (`F("...")`) safe for AVR printing 
 
 Example:
 
@@ -206,45 +194,77 @@ if (!led.init()) {
 
 ## Examples
 
-* **CompleteDemo.ino** – exercises digital colors, blocking/non-blocking blink, PWM 8-bit color, and brightness sweep. (See the example provided with this library or paste it into `examples/CompleteDemo/CompleteDemo.ino`.)
-  The demo calls `blink(1200, 4, false)` and validates elapsed time to ~1200 ms using the remainder distribution logic. 
+### 1) Infinite Blue Blink — 1 s ON / 1 s OFF
+
+```cpp
+led.blue();
+led.blink(1000, 0, false); // infinite; duration = half-period
+```
+
+### 2) Stop Infinite Blink and Leave LED OFF
+
+```cpp
+if (/*some condition*/) {
+  led.stopBlink(true);      // stop + force OFF
+}
+```
+
+### 3) Finite, Exact-Duration Non-Blocking Blink (1200 ms total, 4 cycles)
+
+```cpp
+led.purple();
+led.blink(1200, 4, false);
+while (led.isBlinking()) {
+  led.blinkUpdate();
+}
+```
 
 ---
 
 ## Doxygen Docs
 
-This library is fully annotated for Doxygen. To generate HTML docs:
+This library is fully annotated. To generate HTML:
 
-1. Install Doxygen (`sudo apt-get install doxygen graphviz`).
-2. Create a `Doxyfile` or run `doxygen -g` and set:
+1. `sudo apt-get install doxygen graphviz`
+2. `doxygen -g` then set:
 
    * `PROJECT_NAME = "RGBLED"`
    * `EXTRACT_ALL = YES`
    * `RECURSIVE = YES`
-3. Run `doxygen` in the project root.
+3. Run `doxygen`
 
-The header contains detailed `@file`, `@class`, `@enum`, `@struct`, and method docs. 
+Most details are documented at the source with `@file`, `@class`, `@enum`, and method comments. 
 
 ---
 
 ## Migration Notes
 
-From earlier versions using `String errorMessage`:
+From v1.0 → **v1.1**:
 
-* **Now:** use `lastError` (`RGBLED_Error`) and `errorText()` for human messages (no heap/fragmentation on AVR). 
-* `blink()` semantics are the same, but total duration is **exact** via remainder distribution (both blocking and non-blocking). 
-* Added PWM path: `enablePWM()`, `setRGB()`, `setBrightness()` (optional; digital mode still supported). 
+* **New:** `blink(duration, 0, false)` = **infinite** non-blocking blink, where `duration` is **half-period**.
+* **Unchanged:** Finite blink semantics and exact total duration via remainder distribution.
+* **Unchanged:** PWM path (`enablePWM`, `setRGB`, `setBrightness`), error codes, and glitch-free init.
+
+If you prefer the old behavior (no infinite mode), just avoid passing `number == 0`.
+
+---
+
+## Changelog
+
+* **v1.1** — Infinite blink support (`number == 0`, `duration = half-period`); docs clarified; examples updated.
+* **v1.0** — Deterministic blink with remainder distribution; PWM path; glitch-free init; error codes. 
 
 ---
 
 ## License
 
-MIT (recommended). Add your preferred license text here.
+MIT (recommended). Add license text here.
 
 ---
 
 ### Acknowledgements
 
-* Designed for clarity, determinism, and embedded friendliness (no dynamic allocation in the core path).
-* Thanks to the glitch-free init trick (preloading OFF), your LED won’t flash at boot. 
+* Designed for clarity and determinism on small MCUs (no dynamic allocation in the core path).
+* The **glitch-free init** trick prevents power-up flashes. 
 
+```
