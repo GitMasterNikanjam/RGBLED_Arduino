@@ -13,128 +13,254 @@ RGBLED::RGBLED()
   parameters.GREEN_PIN = -1;
   parameters.BLUE_PIN = -1;
 
-  parameters.COMMON_STATE = 0;
+  parameters.COMMON_STATE = RGBLED_COMMON_CATHODE;
 }
 
 RGBLED::~RGBLED()
 {
   off();
 
-  if(parameters.RED_PIN != -1)
-  {
-    pinMode(parameters.RED_PIN, INPUT);
-  }
-
-  if(parameters.GREEN_PIN != -1)
-  {
-    pinMode(parameters.GREEN_PIN, INPUT);
-  }
-
-  if(parameters.BLUE_PIN != -1)
-  {
-    pinMode(parameters.BLUE_PIN, INPUT);
-  }
+  // Optional: first put pins Hi-Z
+  if (parameters.RED_PIN   != -1) pinMode(parameters.RED_PIN,   INPUT);
+  if (parameters.GREEN_PIN != -1) pinMode(parameters.GREEN_PIN, INPUT);
+  if (parameters.BLUE_PIN  != -1) pinMode(parameters.BLUE_PIN,  INPUT);
 
 }
 
 bool RGBLED::init(void)
 {
+  if (!_checkParameters()) return false;
 
-  if(_checkParameters() == false)
-  {
-    return false;
-  }
+  lastError = RGBLED_OK;
 
-  if(parameters.COMMON_STATE == RGBLED_COMMON_CATHODE)
-  {
-    _onState = 1;
-  }
-  else if(parameters.COMMON_STATE == RGBLED_COMMON_ANODE)
-  {
-    _onState = 0;
-  }
-  else 
-  {
-    errorMessage = "Error RGBLED: Common mode value is not correct.";
-    return false;;
-  }
+  // Compute logical "on" level for the output pins.
+  // For common-cathode: writing HIGH -> LED ON.
+  // For common-anode:   writing LOW  -> LED ON.
+  _onLevel = (parameters.COMMON_STATE == RGBLED_COMMON_CATHODE) ? 1 : 0;
+
+  // --------- Glitch-free init: preload OFF level before switching to OUTPUT
+  const uint8_t offLevel = (_onLevel ? LOW : HIGH);
+  digitalWrite(parameters.RED_PIN,   offLevel);
+  digitalWrite(parameters.GREEN_PIN, offLevel);
+  digitalWrite(parameters.BLUE_PIN,  offLevel);
 
   pinMode(parameters.RED_PIN, OUTPUT);
   pinMode(parameters.GREEN_PIN, OUTPUT);
   pinMode(parameters.BLUE_PIN, OUTPUT);
 
-  off();
+  _redDesired = _greenDesired = _blueDesired = false;
+  _isOn = false;
+  _blinkActive = false;
+  _r8 = _g8 = _b8 = 0;
+
+  _initFlag = true;      // allow blink() etc.
+  off();                 // now effective (or delete this line entirely)
 
   return true;
 }
 
 void RGBLED::set(bool redState, bool greenState, bool blueState)
 {
-  if(_onState == RGBLED_COMMON_CATHODE)
-  {
-    digitalWrite(parameters.RED_PIN, redState);
-    digitalWrite(parameters.GREEN_PIN, greenState);
-    digitalWrite(parameters.BLUE_PIN, blueState);
-  }
-  else
-  {
-    digitalWrite(parameters.RED_PIN, !redState);
-    digitalWrite(parameters.GREEN_PIN, !greenState);
-    digitalWrite(parameters.BLUE_PIN, !blueState);
-  }
+  if (!_initFlag) return;  // Guard (1)
+
+  _redDesired   = redState;
+  _greenDesired = greenState;
+  _blueDesired  = blueState;
+
+  // Map boolean -> 8-bit desired cache for unified path
+  _r8 = _redDesired   ? 255 : 0;
+  _g8 = _greenDesired ? 255 : 0;
+  _b8 = _blueDesired  ? 255 : 0;
+  _applyOutputs();
+
+  _isOn = true;  // reflect that the cached color is now being shown
 }
 
 
 void RGBLED::off(void)
 {
-  set(0,0,0);
+  if (!_initFlag) return;  // Guard (1)
+
+  _isOn = false;
+  // OFF means "not lit" regardless of wiring:
+  // For CC: write LOW; For CA: write HIGH.
+  const uint8_t offLevel = (_onLevel ? LOW : HIGH);
+  
+  if (_pwmEnabled) 
+  {
+    analogWrite(parameters.RED_PIN,   (_onLevel ? 0   : 255)); // 0 duty = off for CC; 255 for CA
+    analogWrite(parameters.GREEN_PIN, (_onLevel ? 0   : 255));
+    analogWrite(parameters.BLUE_PIN,  (_onLevel ? 0   : 255));
+  } 
+  else 
+  {
+    digitalWrite(parameters.RED_PIN,   offLevel);
+    digitalWrite(parameters.GREEN_PIN, offLevel);
+    digitalWrite(parameters.BLUE_PIN,  offLevel);
+  }
 }
 
-void RGBLED::red(void)
+void RGBLED::on() 
 {
-  set(1,0,0);
+  if (!_initFlag) return;  // Guard (1)
+
+  _applyOutputs();
+  _isOn = ((_r8 | _g8 | _b8) != 0);
 }
 
-void RGBLED::green(void)
+void RGBLED::toggle() 
 {
-  set(0,1,0);
+  if (!_initFlag) return;  // Guard (1)
+
+  if (_isOn) off();
+  else       on();
 }
 
-void RGBLED::blue(void)
-{
-  set(0,0,1);
+void RGBLED::inverse(void)
+{   
+  if (!_initFlag) return;  // Guard (1)
+
+  // Invert each desired channel and then show it.
+  set(!_redDesired, !_greenDesired, !_blueDesired);
 }
 
-void RGBLED::yellow(void)
+void RGBLED::setRGB(uint8_t r, uint8_t g, uint8_t b)
 {
-  set(1,1,0);
+  if (!_initFlag) return;  // Guard (1)
+  _r8 = r; _g8 = g; _b8 = b;
+  // Keep logical booleans in sync for callers that read them
+  _redDesired   = (r != 0);
+  _greenDesired = (g != 0);
+  _blueDesired  = (b != 0);
+  _applyOutputs();
+  _isOn = (_r8 | _g8 | _b8) != 0;
 }
 
-void RGBLED::purple(void)
+void RGBLED::_applyOutputs()
 {
-  set(1,0,1);
+  // Brightness scaling (0..255)
+  uint16_t r = (uint16_t)_r8 * _brightness / 255;
+  uint16_t g = (uint16_t)_g8 * _brightness / 255;
+  uint16_t b = (uint16_t)_b8 * _brightness / 255;
+
+  if (_pwmEnabled) {
+    // Apply wiring mode (CA inverts)
+    uint8_t pr = _onLevel ? r : (255 - r);
+    uint8_t pg = _onLevel ? g : (255 - g);
+    uint8_t pb = _onLevel ? b : (255 - b);
+    analogWrite(parameters.RED_PIN,   pr);
+    analogWrite(parameters.GREEN_PIN, pg);
+    analogWrite(parameters.BLUE_PIN,  pb);
+  } else {
+    // Digital writes: non-zero -> ON
+    const bool rOn = (_onLevel ? (r != 0) : (r == 0));
+    const bool gOn = (_onLevel ? (g != 0) : (g == 0));
+    const bool bOn = (_onLevel ? (b != 0) : (b == 0));
+    digitalWrite(parameters.RED_PIN,   rOn ? HIGH : LOW);
+    digitalWrite(parameters.GREEN_PIN, gOn ? HIGH : LOW);
+    digitalWrite(parameters.BLUE_PIN,  bOn ? HIGH : LOW);
+  }
 }
 
-void RGBLED::cyan(void)
+void RGBLED::getColor(bool &r, bool &g, bool &b) const
 {
-  set(0,1,1);
+  r = _redDesired;
+  g = _greenDesired;
+  b = _blueDesired;
 }
 
-void RGBLED::white(void)
+void RGBLED::stopBlink(bool turnOff)
 {
-  set(1,1,1);
+  _blinkActive = false;
+  _blinkEdgeCnt = 0;
+  _blinkNumber = 0;
+  _blinkRemainder = 0;
+  if (turnOff) off();
+  else _applyOutputs();
 }
+
+void RGBLED::blink(uint16_t duration_ms, uint8_t number, bool blocking) 
+{
+    if (!_initFlag) return;
+
+    if (duration_ms == 0 || number == 0) {
+        _blinkActive = false;
+        off();
+        return;
+    }
+
+    // half-period per edge (on or off)
+    // duration_ms covers "number" ON and "number" OFF => 2*number edges
+    const uint32_t edges = 2UL * number;
+    _blinkDelayMs  = (uint32_t)(duration_ms / edges);
+    _blinkRemainder = (uint16_t)(duration_ms % edges); // (3) distribute +1 ms over first _blinkRemainder edges
+    if (_blinkDelayMs == 0 && edges) { _blinkDelayMs = 1; } // avoid zero delay
+    _currentDelay = _blinkDelayMs + (_blinkRemainder ? 1 : 0);
+
+    if (blocking) 
+    {
+      // Save current desired color; we blink this color.
+      const bool r = _redDesired, g = _greenDesired, b = _blueDesired;
+
+      uint16_t rem = _blinkRemainder;
+      for (uint8_t i = 0; i < number; ++i) 
+      {
+        set(r, g, b);
+        delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
+        off();
+        delay(_blinkDelayMs + (rem ? 1 : 0)); if (rem) --rem;
+      }
+    } 
+    else 
+    {
+        _blinkNumber  = number;
+        _blinkEdgeCnt = 0;
+        _blinkActive  = true;
+        _tRef         = millis();
+
+        // Start from ON (show cached color)
+        on();
+    }
+}
+
+void RGBLED::blinkUpdate() 
+{
+    if (!_blinkActive || !_initFlag) return; // Guard (1)
+
+    const uint32_t now = millis();
+    if ((uint32_t)(now - _tRef) < _currentDelay) return;
+
+    // time for next edge
+    toggle();
+    _tRef = now;
+    _blinkEdgeCnt++;
+    if (_blinkRemainder) { _blinkRemainder--; }
+   _currentDelay = _blinkDelayMs + (_blinkRemainder ? 1 : 0);
+
+    if (_blinkEdgeCnt >= (uint8_t)(2 * _blinkNumber)) {
+        _blinkActive = false;
+        off();
+    }
+}
+
+void RGBLED::red()    { set(true,  false, false); }
+void RGBLED::green()  { set(false, true,  false); }
+void RGBLED::blue()   { set(false, false, true ); }
+void RGBLED::yellow() { set(true,  true,  false); }
+void RGBLED::purple() { set(true,  false, true ); }
+void RGBLED::cyan()   { set(false, true,  true ); }
+void RGBLED::white()  { set(true,  true,  true ); }
 
 bool RGBLED::_checkParameters(void)
 {
-  bool state = ( (parameters.COMMON_STATE <= 1) && (parameters.BLUE_PIN >= 0) &&
-               (parameters.GREEN_PIN >= 0) && (parameters.RED_PIN >= 0) ); 
+  const bool ok =
+        (parameters.RED_PIN   >= 0) &&
+        (parameters.GREEN_PIN >= 0) &&
+        (parameters.BLUE_PIN  >= 0) &&
+        (parameters.COMMON_STATE == RGBLED_COMMON_CATHODE ||
+         parameters.COMMON_STATE == RGBLED_COMMON_ANODE);
 
-  if(state == false)
-  {
-    errorMessage = "Error RGBLED: One or Some parameters are not correct.";
-    return false;
-  }
+  if (!ok) { lastError = RGBLED_ERR_PARAMS; }
 
-  return true;
+  return ok;
 }
