@@ -12,8 +12,7 @@ RGBLED::RGBLED()
   parameters.RED_PIN = -1;
   parameters.GREEN_PIN = -1;
   parameters.BLUE_PIN = -1;
-
-  parameters.COMMON_STATE = RGBLED_COMMON_CATHODE;
+  parameters.ACTIVE_MODE = RGBLED_ACTIVE_HIGH;
 }
 
 RGBLED::~RGBLED()
@@ -34,9 +33,9 @@ bool RGBLED::init(void)
   lastError = RGBLED_OK;
 
   // Compute logical "on" level for the output pins.
-  // For common-cathode: writing HIGH -> LED ON.
-  // For common-anode:   writing LOW  -> LED ON.
-  _onLevel = (parameters.COMMON_STATE == RGBLED_COMMON_CATHODE) ? 1 : 0;
+  // For active high: writing HIGH -> LED ON.
+  // For active low:   writing LOW  -> LED ON.
+  _onLevel = (parameters.ACTIVE_MODE == RGBLED_ACTIVE_HIGH) ? 1 : 0;
 
   // --------- Glitch-free init: preload OFF level before switching to OUTPUT
   const uint8_t offLevel = (_onLevel ? LOW : HIGH);
@@ -272,8 +271,8 @@ bool RGBLED::_checkParameters(void)
         (parameters.RED_PIN   >= 0) &&
         (parameters.GREEN_PIN >= 0) &&
         (parameters.BLUE_PIN  >= 0) &&
-        (parameters.COMMON_STATE == RGBLED_COMMON_CATHODE ||
-         parameters.COMMON_STATE == RGBLED_COMMON_ANODE);
+        (parameters.ACTIVE_MODE == RGBLED_ACTIVE_HIGH ||
+         parameters.ACTIVE_MODE == RGBLED_ACTIVE_LOW);
 
   if (!ok) { lastError = RGBLED_ERR_PARAMS; }
 

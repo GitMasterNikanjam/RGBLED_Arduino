@@ -43,20 +43,29 @@
 // ###########################################################################
 
 /**
- * @enum RGBLED_CommonMode
- * @brief Wiring mode for the RGB LED.
+ * @enum RGBLED_ActiveMode
+ * @brief Specifies the electrical active mode for driving the RGB LED.
  *
- * Defines how the LED is wired:
- * - Common Cathode: LED anodes connected to Arduino pins, cathode to GND.
- *   Writing HIGH lights a color.
- * - Common Anode: LED cathodes connected to Arduino pins, anode to VCC.
- *   Writing LOW lights a color.
+ * This enumeration defines how the microcontroller (MCU) output signal
+ * controls the ON/OFF state of the LED, depending on whether the LED is
+ * wired as active-low or active-high:
+ *
+ * - **RGBLED_ACTIVE_LOW**:  
+ *   The LED turns ON when the MCU output is logic LOW (0).  
+ *   Writing `LOW` to the pin lights the LED.  
+ *   Writing `HIGH` to the pin turns it OFF.
+ *
+ * - **RGBLED_ACTIVE_HIGH**:  
+ *   The LED turns ON when the MCU output is logic HIGH (1).  
+ *   Writing `HIGH` to the pin lights the LED.  
+ *   Writing `LOW` to the pin turns it OFF.
  */
-enum RGBLED_CommonMode : uint8_t 
+enum RGBLED_ActiveMode : uint8_t 
 {
-  RGBLED_COMMON_CATHODE = 0,  ///< LED anodes on pins, common pin to GND. Logic HIGH turns a color ON.
-  RGBLED_COMMON_ANODE   = 1   ///< LED cathodes on pins, common pin to VCC. Logic LOW turns a color ON.
+  RGBLED_ACTIVE_LOW  = 0,  /**< LED is active when MCU output is LOW (0). */
+  RGBLED_ACTIVE_HIGH = 1   /**< LED is active when MCU output is HIGH (1). */
 };
+
 
 /**
  * @struct RGBLED_Params
@@ -66,10 +75,10 @@ enum RGBLED_CommonMode : uint8_t
  */
 struct RGBLED_Params 
 {
-  int8_t  RED_PIN   = -1;                ///< Arduino pin for Red channel.
-  int8_t  GREEN_PIN = -1;                ///< Arduino pin for Green channel.
-  int8_t  BLUE_PIN  = -1;                ///< Arduino pin for Blue channel.
-  uint8_t COMMON_STATE = RGBLED_COMMON_CATHODE; ///< Wiring mode: anode or cathode.
+  int8_t  RED_PIN   = -1;                   ///< Arduino pin for Red channel.
+  int8_t  GREEN_PIN = -1;                   ///< Arduino pin for Green channel.
+  int8_t  BLUE_PIN  = -1;                   ///< Arduino pin for Blue channel.
+  uint8_t ACTIVE_MODE = RGBLED_ACTIVE_HIGH; ///< Active mode: 0:LOW, 1:HIGH
 };
 
 // ###########################################################################
